@@ -3,16 +3,26 @@ import { StatusBar } from "./components/StatusBar";
 import { ChatPanel } from "./components/ChatPanel";
 import { NotesPanel } from "./components/NotesPanel";
 import { ExamGeneratorPanel } from "./components/ExamGeneratorPanel";
+import { ImageStudioPanel } from "./components/ImageStudioPanel";
 import { HistoryDrawer } from "./components/HistoryDrawer";
 import type { ExamPaperRecord } from "./api/client";
 
-export type NavTab = "chat" | "notes" | "exam" | "generate" | "debug";
+export type NavTab = "chat" | "notes" | "exam" | "image" | "generate" | "debug";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<NavTab>("chat");
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
   const [selectedExam, setSelectedExam] = useState<ExamPaperRecord | null>(null);
+  const [editorInitialCode, setEditorInitialCode] = useState<string | undefined>(undefined);
+
+  function handleTabChange(tab: NavTab) {
+    if (tab !== activeTab) {
+      setSelectedConvId(null);
+      setSelectedExam(null);
+    }
+    setActiveTab(tab);
+  }
 
   function handleSelectConversation(convId: string, mode: string) {
     setSelectedConvId(convId);
@@ -38,47 +48,59 @@ export default function App() {
     setIsHistoryOpen(false);
   }
 
+  function handleOpenCodeInEditor(code: string) {
+    setEditorInitialCode(code);
+    setActiveTab("chat");
+  }
+
   return (
-    <div className="app">
+    <div className="app terminal-theme">
       <StatusBar />
 
-      {/* Main Feature Navigation Bar */}
+      {/* Main Terminal Feature Navigation Bar */}
       <nav className="main-nav-bar">
         <div className="main-tabs">
           <button
             type="button"
             className={`main-tab ${activeTab === "chat" ? "active" : ""}`}
-            onClick={() => setActiveTab("chat")}
+            onClick={() => handleTabChange("chat")}
           >
-            💬 Code Chat
+            <span className="tab-prompt">$</span> 💬 Code Chat
           </button>
           <button
             type="button"
             className={`main-tab ${activeTab === "notes" ? "active" : ""}`}
-            onClick={() => setActiveTab("notes")}
+            onClick={() => handleTabChange("notes")}
           >
-            📚 Notes & Q&A (RAG)
+            <span className="tab-prompt">$</span> 📚 Notes Q&A (RAG)
           </button>
           <button
             type="button"
             className={`main-tab ${activeTab === "exam" ? "active" : ""}`}
-            onClick={() => setActiveTab("exam")}
+            onClick={() => handleTabChange("exam")}
           >
-            📝 Exam Generator
+            <span className="tab-prompt">$</span> 📝 Exam Generator
+          </button>
+          <button
+            type="button"
+            className={`main-tab ${activeTab === "image" ? "active" : ""}`}
+            onClick={() => handleTabChange("image")}
+          >
+            <span className="tab-prompt">$</span> 🎨 Image Studio
           </button>
           <button
             type="button"
             className={`main-tab ${activeTab === "generate" ? "active" : ""}`}
-            onClick={() => setActiveTab("generate")}
+            onClick={() => handleTabChange("generate")}
           >
-            ⚡ Generate Code
+            <span className="tab-prompt">$</span> ⚡ Code Gen
           </button>
           <button
             type="button"
             className={`main-tab ${activeTab === "debug" ? "active" : ""}`}
-            onClick={() => setActiveTab("debug")}
+            onClick={() => handleTabChange("debug")}
           >
-            🐞 Debug Assistant
+            <span className="tab-prompt">$</span> 🐞 Debugger
           </button>
         </div>
 
@@ -90,7 +112,7 @@ export default function App() {
             onClick={() => setIsHistoryOpen(true)}
             title="Open locally saved chats & exams"
           >
-            💾 Local History
+            <span className="history-icon">💾</span> Local History
           </button>
         </div>
       </nav>
@@ -108,11 +130,15 @@ export default function App() {
       <main className="main-content">
         {activeTab === "notes" && <NotesPanel initialConvId={selectedConvId} />}
         {activeTab === "exam" && <ExamGeneratorPanel initialExam={selectedExam} />}
+        {activeTab === "image" && (
+          <ImageStudioPanel onOpenInEditor={handleOpenCodeInEditor} />
+        )}
         {(activeTab === "chat" || activeTab === "generate" || activeTab === "debug") && (
           <ChatPanel
             mode={activeTab}
             onModeChange={(m) => setActiveTab(m)}
             initialConvId={selectedConvId}
+            initialCode={editorInitialCode}
           />
         )}
       </main>

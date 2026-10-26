@@ -15,9 +15,17 @@ from app.core.ollama_client import ollama_client
 from app.modules.rag.schemas import DocumentInfo, SourceChunk
 
 
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif"}
+
+
 def cosine_similarity(v1: list[float], v2: list[float]) -> float:
-    if not v1 or not v2 or len(v1) != len(v2):
+    if not v1 or not v2:
         return 0.0
+    if len(v1) != len(v2):
+        max_len = max(len(v1), len(v2))
+        v1 = v1 + [0.0] * (max_len - len(v1))
+        v2 = v2 + [0.0] * (max_len - len(v2))
+
     dot = 0.0
     norm1 = 0.0
     norm2 = 0.0
@@ -33,24 +41,50 @@ def cosine_similarity(v1: list[float], v2: list[float]) -> float:
 def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
     ext = Path(filename).suffix.lower()
 
-    if ext == ".pdf":
-        from pypdf import PdfReader
-        reader = PdfReader(io.BytesIO(file_bytes))
-        pages_text: list[str] = []
-        for i, page in enumerate(reader.pages):
-            text = page.extract_text() or ""
-            if text.strip():
-                pages_text.append(f"--- Page {i + 1} ---\n{text.strip()}")
-        return "\n\n".join(pages_text)
+    # 1. Standalone image notes (screenshots, scans, photos)
+    if ext in IMAGE_EXTENSIONS:
+        try:
+            from app.core.ocr import ocr_image_bytes
+            extracted = ocr_image_bytes(file_bytes)
+            if extracted.strip():
+                return f"--- Image Note ({filename}) ---\n{extracted.strip()}"
+        except Exception:
+            pass
+        return ""
 
+    # 2. PDF documents (digital or scanned)
+    elif ext == ".pdf":
+        from pypdf import PdfReader
+        from app.core.ocr import ocr_scanned_pdf
+
+        pages_text: list[str] = []
+        try:
+            reader = PdfReader(io.BytesIO(file_bytes))
+            for i, page in enumerate(reader.pages):
+                text = (page.extract_text() or "").strip()
+                if text:
+                    pages_text.append(f"--- Page {i + 1} ---\n{text}")
+        except Exception:
+            pages_text = []
+
+        total_digital_text = "\n\n".join(pages_text).strip()
+        # If PDF has no digital text or sparse text (< 25 chars per page), run native OCR on scanned pages
+        if not total_digital_text or len(total_digital_text) < max(25, len(pages_text) * 20):
+            scanned_ocr_text = ocr_scanned_pdf(file_bytes)
+            if scanned_ocr_text.strip():
+                return scanned_ocr_text
+
+        return total_digital_text
+
+    # 3. Microsoft Word (.docx)
     elif ext == ".docx":
         import docx
         doc = docx.Document(io.BytesIO(file_bytes))
         paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
         return "\n\n".join(paragraphs)
 
+    # 4. Plain text / Markdown / Source code notes
     else:
-        # Default text/code handler
         try:
             return file_bytes.decode("utf-8")
         except UnicodeDecodeError:
@@ -62,7 +96,6 @@ def chunk_text(text: str, chunk_size: int = 700, chunk_overlap: int = 100) -> li
     if not cleaned:
         return []
 
-    # Split by paragraphs or double newlines first
     paragraphs = re.split(r"\n\s*\n", cleaned)
     chunks: list[str] = []
     current_chunk: list[str] = []
@@ -74,7 +107,6 @@ def chunk_text(text: str, chunk_size: int = 700, chunk_overlap: int = 100) -> li
             continue
 
         if len(para_clean) > chunk_size:
-            # Paragraph is too long, split by sentences or punctuation
             sentences = re.split(r"(?<=[.?!])\s+", para_clean)
             for s in sentences:
                 s_clean = s.strip()
@@ -83,8 +115,9 @@ def chunk_text(text: str, chunk_size: int = 700, chunk_overlap: int = 100) -> li
                 if current_len + len(s_clean) > chunk_size and current_chunk:
                     chunk_str = " ".join(current_chunk)
                     chunks.append(chunk_str)
-                    # Keep overlap from the end
                     overlap_tokens = chunk_str[-chunk_overlap:] if len(chunk_str) > chunk_overlap else ""
+                    if overlap_tokens and " " in overlap_tokens:
+                        overlap_tokens = overlap_tokens[overlap_tokens.find(" ") + 1:].strip()
                     current_chunk = [overlap_tokens, s_clean] if overlap_tokens else [s_clean]
                     current_len = sum(len(x) for x in current_chunk)
                 else:
@@ -95,6 +128,8 @@ def chunk_text(text: str, chunk_size: int = 700, chunk_overlap: int = 100) -> li
                 chunk_str = "\n\n".join(current_chunk)
                 chunks.append(chunk_str)
                 overlap_tokens = chunk_str[-chunk_overlap:] if len(chunk_str) > chunk_overlap else ""
+                if overlap_tokens and " " in overlap_tokens:
+                    overlap_tokens = overlap_tokens[overlap_tokens.find(" ") + 1:].strip()
                 current_chunk = [overlap_tokens, para_clean] if overlap_tokens else [para_clean]
                 current_len = sum(len(x) for x in current_chunk)
             else:
@@ -151,12 +186,12 @@ class VectorStore:
             pass
 
         # Fallback pseudo-embedding (character / term frequency hashing for offline resilience)
-        vec = [0.0] * 128
+        vec = [0.0] * 768
         words = re.findall(r"\w+", text.lower())
         if not words:
             return vec
         for word in words:
-            h = abs(hash(word)) % 128
+            h = abs(hash(word)) % 768
             vec[h] += 1.0
         # Normalize
         norm = math.sqrt(sum(x * x for x in vec))

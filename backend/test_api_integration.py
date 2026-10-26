@@ -1,6 +1,9 @@
 import asyncio
+import io
 import httpx
+from PIL import Image, ImageDraw
 from app.main import app
+
 
 async def run_integration_tests():
     print("=== Testing CodeHaven FastAPI Endpoints (In-Memory ASGI) ===")
@@ -19,7 +22,7 @@ async def run_integration_tests():
         print(f"[PASS] GET /api/rag/status -> Status: {res.status_code}, data: {res.json()}")
         assert res.status_code == 200
 
-        # 3. Upload a sample document
+        # 3. Upload a sample text document
         sample_doc_content = (
             "Subject: Operating Systems\n\n"
             "Chapter 1: Process Management\n"
@@ -36,57 +39,85 @@ async def run_integration_tests():
 
         files = {"file": ("operating_systems_notes.txt", sample_doc_content.encode("utf-8"), "text/plain")}
         res = await client.post("/api/rag/upload", files=files)
-        print(f"[PASS] POST /api/rag/upload -> Status: {res.status_code}")
+        print(f"[PASS] POST /api/rag/upload (text) -> Status: {res.status_code}")
         assert res.status_code == 200
-        doc_data = res.json()
-        doc_id = doc_data["id"]
-        print(f"       Uploaded doc ID: {doc_id}, chunks: {doc_data['chunk_count']}")
+        text_doc_data = res.json()
+        text_doc_id = text_doc_data["id"]
+        print(f"       Uploaded text doc ID: {text_doc_id}, chunks: {text_doc_data['chunk_count']}")
 
-        # 4. List documents
+        # 4. Upload an image document for OCR extraction
+        img = Image.new("RGB", (450, 120), color=(255, 255, 255))
+        draw = ImageDraw.Draw(img)
+        draw.text((25, 45), "CodeHaven Operating Systems OCR Ingestion", fill=(0, 0, 0))
+        img_buf = io.BytesIO()
+        img.save(img_buf, format="PNG")
+        img_bytes = img_buf.getvalue()
+
+        img_files = {"file": ("os_diagram_ocr.png", img_bytes, "image/png")}
+        res = await client.post("/api/rag/upload", files=img_files)
+        print(f"[PASS] POST /api/rag/upload (image OCR) -> Status: {res.status_code}")
+        assert res.status_code == 200
+        img_doc_data = res.json()
+        img_doc_id = img_doc_data["id"]
+        print(f"       Uploaded image doc ID: {img_doc_id}, chunks: {img_doc_data['chunk_count']}")
+
+        # 5. List documents
         res = await client.get("/api/rag/documents")
         print(f"[PASS] GET /api/rag/documents -> Found {len(res.json())} document(s)")
-        assert any(d["id"] == doc_id for d in res.json())
+        assert any(d["id"] == text_doc_id for d in res.json())
+        assert any(d["id"] == img_doc_id for d in res.json())
 
-        # 5. Semantic Search
-        res = await client.post("/api/rag/search", params={"query": "What are the four conditions for deadlock?", "top_k": 2})
-        print(f"[PASS] POST /api/rag/search -> Status: {res.status_code}, matches: {len(res.json())}")
+        # 6. Semantic Search for text notes
+        res = await client.post(
+            "/api/rag/search",
+            params={"query": "What are the four conditions for deadlock?", "top_k": 2},
+        )
+        print(f"[PASS] POST /api/rag/search (text) -> Status: {res.status_code}, matches: {len(res.json())}")
         assert len(res.json()) > 0
         top_match = res.json()[0]
-        print(f"       Top match similarity: {top_match['similarity']}, doc: {top_match['filename']}")
+        print(f"       Top match similarity: {top_match['similarity']:.4f}, doc: {top_match['filename']}")
 
-        # 6. Stream Query
-        query_payload = {
-            "question": "What is Banker's algorithm and what are the Coffman conditions?",
-            "stream": True,
-            "top_k": 2,
-        }
-        res = await client.post("/api/rag/query", json=query_payload, timeout=60.0)
-        print(f"[PASS] POST /api/rag/query (stream) -> Status: {res.status_code}")
+        # 7. Semantic Search for OCR image notes
+        res = await client.post(
+            "/api/rag/search",
+            params={"query": "Operating Systems OCR Ingestion", "top_k": 2},
+        )
+        print(f"[PASS] POST /api/rag/search (OCR) -> Status: {res.status_code}, matches: {len(res.json())}")
+        assert len(res.json()) > 0
+        ocr_match = next((m for m in res.json() if m["doc_id"] == img_doc_id), None)
+        assert ocr_match is not None, "OCR image note was not matched in search!"
+        print(f"       OCR match score: {ocr_match['similarity']:.4f}, doc: {ocr_match['filename']}")
+
+        # 8. History API verification
+        conv_payload = {"title": "OS Revision Session", "mode": "notes_qa"}
+        res = await client.post("/api/history/conversations", json=conv_payload)
+        print(f"[PASS] POST /api/history/conversations -> Status: {res.status_code}")
         assert res.status_code == 200
-        first_chunk = res.text[:200]
-        print(f"       Stream preview:\n{first_chunk}...\n")
+        conv_data = res.json()
+        conv_id = conv_data["id"]
 
-        # 7. Exam Paper Generation
-        exam_payload = {
-            "title": "Semester Assessment in Operating Systems",
-            "subject": "Operating Systems",
-            "difficulty": "medium",
-            "total_marks": 50,
-            "duration_minutes": 60,
-            "include_solutions": True,
-            "stream": True,
-        }
-        res = await client.post("/api/rag/exam/generate", json=exam_payload, timeout=120.0)
-        print(f"[PASS] POST /api/rag/exam/generate (stream) -> Status: {res.status_code}")
-        assert res.status_code == 200
-        print(f"       Exam paper stream preview:\n{res.text[:300]}...\n")
-
-        # 8. Clean up document
-        res = await client.delete(f"/api/rag/documents/{doc_id}")
-        print(f"[PASS] DELETE /api/rag/documents/{doc_id} -> Status: {res.status_code}")
+        msg_payload = {"role": "user", "content": "Explain Coffman conditions"}
+        res = await client.post(f"/api/history/conversations/{conv_id}/messages", json=msg_payload)
+        print(f"[PASS] POST /api/history/conversations/{conv_id}/messages -> Status: {res.status_code}")
         assert res.status_code == 200
 
-    print("\nALL FASTAPI INTEGRATION TESTS PASSED!")
+        res = await client.get(f"/api/history/conversations/{conv_id}")
+        assert res.status_code == 200
+        assert len(res.json()["messages"]) == 1
+        print(f"[PASS] GET /api/history/conversations/{conv_id} -> Verified message storage")
+
+        # 9. Clean up test documents and conversation
+        res = await client.delete(f"/api/rag/documents/{text_doc_id}")
+        assert res.status_code == 200
+        res = await client.delete(f"/api/rag/documents/{img_doc_id}")
+        assert res.status_code == 200
+        res = await client.delete(f"/api/history/conversations/{conv_id}")
+        assert res.status_code == 200
+        print(f"[PASS] Cleaned up text doc, OCR image doc, and history conversation.")
+
+    print("\nALL FASTAPI INTEGRATION & OCR TESTS PASSED SUCCESSFULLY!")
+
 
 if __name__ == "__main__":
     asyncio.run(run_integration_tests())
+

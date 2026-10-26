@@ -45,7 +45,14 @@ async def upload_document(file: UploadFile = File(...)) -> DocumentInfo:
         if not content:
             raise HTTPException(status_code=400, detail="Empty file uploaded.")
         doc_info = await vector_store.add_document(content, filename)
+        if doc_info.chunk_count == 0:
+            raise HTTPException(
+                status_code=422,
+                detail=f"No text or characters could be extracted from '{filename}'. If it is a scanned image, ensure it contains clear readable text.",
+            )
         return doc_info
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(
             status_code=500, detail=f"Failed to process and index document: {exc}"
@@ -80,7 +87,7 @@ async def query_notes(request: QueryRequest) -> QueryResponse | StreamingRespons
     )
 
     messages = build_rag_qa_messages(request.question, sources)
-    model = request.model or settings.chat_model
+    model = await ollama_client.get_effective_model(request.model)
 
     if request.stream:
         async def event_stream():

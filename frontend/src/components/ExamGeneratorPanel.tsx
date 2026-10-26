@@ -7,6 +7,7 @@ import {
   type ExamGenerateRequest,
   type ExamPaperRecord,
 } from "../api/client";
+import { AgentProcessTimeline } from "./AgentProcessTimeline";
 
 interface ExamGeneratorPanelProps {
   initialExam?: ExamPaperRecord | null;
@@ -26,6 +27,8 @@ export function ExamGeneratorPanel({ initialExam }: ExamGeneratorPanelProps = {}
   const [examContent, setExamContent] = useState<string>("");
   const [showSolutions, setShowSolutions] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [genStartTime, setGenStartTime] = useState<number>(0);
+  const [genEndTime, setGenEndTime] = useState<number | undefined>(undefined);
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -61,6 +64,8 @@ export function ExamGeneratorPanel({ initialExam }: ExamGeneratorPanelProps = {}
 
     setGenerating(true);
     setExamContent("");
+    setGenStartTime(Date.now());
+    setGenEndTime(undefined);
     abortRef.current = new AbortController();
 
     const req: ExamGenerateRequest = {
@@ -100,6 +105,7 @@ export function ExamGeneratorPanel({ initialExam }: ExamGeneratorPanelProps = {}
       const msg = err instanceof Error ? err.message : "Failed to generate exam paper";
       setExamContent((prev) => prev + `\n\n[Error: ${msg}]`);
     } finally {
+      setGenEndTime(Date.now());
       setGenerating(false);
       abortRef.current = null;
     }
@@ -133,7 +139,7 @@ export function ExamGeneratorPanel({ initialExam }: ExamGeneratorPanelProps = {}
   // Filter content to hide solutions if user toggled it off
   const displayContent = showSolutions
     ? examContent
-    : examContent.split(/### SECTION D: COMPLETE MARKING SCHEME/i)[0];
+    : examContent.split(/(?:###?|\*\*|##)\s*SECTION\s*D(?::|\s|-).*/i)[0];
 
   return (
     <div className="layout exam-layout">
@@ -316,6 +322,16 @@ export function ExamGeneratorPanel({ initialExam }: ExamGeneratorPanelProps = {}
             </div>
           ) : (
             <div className="exam-sheet">
+              {genStartTime > 0 && (
+                <AgentProcessTimeline
+                  isLive={generating}
+                  startTime={genStartTime}
+                  endTime={genEndTime}
+                  mode="exam"
+                  sourcesCount={selectedDocIds.length > 0 ? selectedDocIds.length : documents.length}
+                  tokenCount={displayContent ? displayContent.split(/\s+/).filter(Boolean).length : 0}
+                />
+              )}
               {generating && !examContent && (
                 <div className="generating-indicator">
                   <div className="spinner"></div>

@@ -222,27 +222,40 @@ export async function streamNotesQuery(
 
   while (true) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done) {
+      if (!sourcesExtracted && buffer) {
+        onToken(buffer);
+      }
+      break;
+    }
 
     const chunk = decoder.decode(value, { stream: true });
     buffer += chunk;
 
     if (!sourcesExtracted) {
-      const match = buffer.match(/^__SOURCES__:(.*?)\n\n([\s\S]*)$/);
-      if (match) {
-        try {
-          const sources: SourceChunk[] = JSON.parse(match[1]);
-          if (onSources) onSources(sources);
-        } catch {
-          // ignore parse error
+      if (buffer.startsWith("__SOURCES__:")) {
+        const splitIdx = buffer.indexOf("\n\n");
+        if (splitIdx !== -1) {
+          const jsonStr = buffer.slice("__SOURCES__:".length, splitIdx);
+          const remainder = buffer.slice(splitIdx + 2);
+          try {
+            const sources: SourceChunk[] = JSON.parse(jsonStr);
+            if (onSources) onSources(sources);
+          } catch {
+            // ignore JSON error
+          }
+          sourcesExtracted = true;
+          if (remainder) {
+            onToken(remainder);
+          }
+          buffer = "";
         }
-        sourcesExtracted = true;
-        const remainder = match[2];
-        if (remainder) {
-          onToken(remainder);
-        }
-        buffer = "";
-      } else if (!buffer.startsWith("__SOURCES__:")) {
+        // Still waiting for complete \n\n delimiter
+      } else if (buffer.length < 12 && "__SOURCES__:".startsWith(buffer)) {
+        // Partial prefix buffer, wait for next packet
+        continue;
+      } else {
+        // Normal text response without sources header
         sourcesExtracted = true;
         onToken(buffer);
         buffer = "";
@@ -402,4 +415,127 @@ export async function deleteExamPaper(id: string): Promise<boolean> {
   });
   if (!res.ok) throw new Error("Failed to delete exam paper");
   return true;
+}
+
+// --- Code Execution Runner Types & API ---
+export interface ExecuteRequest {
+  code: string;
+  language: string;
+  stdin?: string;
+  timeout_seconds?: number;
+}
+
+export interface ExecuteResponse {
+  status: "success" | "error" | "timeout";
+  stdout: string;
+  stderr: string;
+  exit_code: number;
+  execution_time_ms: number;
+  language: string;
+  runtime_version?: string;
+}
+
+export interface RuntimeInfo {
+  id: string;
+  name: string;
+  version: string;
+  available: boolean;
+  extension: string;
+  example_code: string;
+}
+
+export async function executeCode(req: ExecuteRequest): Promise<ExecuteResponse> {
+  const res = await fetch(`${API_BASE}/runner/execute`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err || "Execution request failed");
+  }
+  return res.json();
+}
+
+export async function fetchRuntimes(): Promise<RuntimeInfo[]> {
+  const res = await fetch(`${API_BASE}/runner/runtimes`);
+  if (!res.ok) throw new Error("Failed to load runtimes");
+  return res.json();
+}
+
+// --- Image & Diagram Studio Types & API ---
+export interface ImageGenerateRequest {
+  prompt: string;
+  style?: "vector" | "architecture" | "flowchart" | "datastructure" | "cyberpunk" | "ui_mockup";
+  aspect_ratio?: "16:9" | "1:1" | "4:3";
+  theme?: "terminal" | "dark" | "blueprint" | "neon";
+  model?: string;
+}
+
+export interface ImageItem {
+  id: string;
+  prompt: string;
+  style: string;
+  format: string;
+  created_at: string;
+  svg_content: string;
+  title: string;
+}
+
+export interface ImageGenerateResponse {
+  image: ImageItem;
+  explanation: string;
+}
+
+export async function generateImage(req: ImageGenerateRequest): Promise<ImageGenerateResponse> {
+  const res = await fetch(`${API_BASE}/images/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err || "Image generation failed");
+  }
+  return res.json();
+}
+
+export async function fetchImages(): Promise<ImageItem[]> {
+  const res = await fetch(`${API_BASE}/images`);
+  if (!res.ok) throw new Error("Failed to load images");
+  return res.json();
+}
+
+export async function deleteImage(id: string): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/images/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error("Failed to delete image");
+  return true;
+}
+
+// --- Speed Mode Types & API ---
+export interface SpeedStatusResponse {
+  active_mode: "turbo" | "balanced";
+  effective_model: string;
+  cpu_threads: number;
+  keep_alive: string;
+  speed_estimate: string;
+  all_models: string[];
+}
+
+export async function fetchSpeedStatus(): Promise<SpeedStatusResponse> {
+  const res = await fetch(`${API_BASE}/speed`);
+  if (!res.ok) throw new Error("Failed to fetch speed status");
+  return res.json();
+}
+
+export async function setSpeedMode(mode: "turbo" | "balanced"): Promise<{ status: string; active_mode: string; effective_model: string }> {
+  const res = await fetch(`${API_BASE}/speed/mode`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode }),
+  });
+  if (!res.ok) throw new Error("Failed to set speed mode");
+  return res.json();
 }

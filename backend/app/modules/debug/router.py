@@ -20,7 +20,7 @@ async def analyze_code(request: DebugRequest) -> DebugResponse | StreamingRespon
         request.error_message,
         parsed,
     )
-    model = request.model or settings.chat_model
+    model = await ollama_client.get_effective_model(request.model)
 
     if request.stream:
         async def event_stream():

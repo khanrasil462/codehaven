@@ -53,10 +53,30 @@ async def run_tests():
     assert "SECTION D: COMPLETE MARKING SCHEME" in exam_messages[1]["content"]
     print("[PASS] University Reference Exam Paper prompt constructed successfully.")
 
-    # Clean up test doc
+    # 5. Test OCR Image Ingestion & Search
+    import io
+    from PIL import Image, ImageDraw
+    img = Image.new('RGB', (450, 120), color=(255, 255, 255))
+    draw = ImageDraw.Draw(img)
+    draw.text((25, 45), "CodeHaven Offline OCR Ingestion Test", fill=(0, 0, 0))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    img_bytes = buf.getvalue()
+
+    ocr_doc = await vector_store.add_document(img_bytes, "ocr_sample_test.png")
+    assert ocr_doc.chunk_count > 0, "OCR document produced 0 chunks!"
+    print(f"[PASS] Ingested image via OCR: {ocr_doc.filename}, Chunks: {ocr_doc.chunk_count}")
+
+    ocr_results = await vector_store.search("Offline OCR Ingestion", top_k=1)
+    assert len(ocr_results) > 0, "OCR document search returned 0 results!"
+    assert ocr_results[0].doc_id == ocr_doc.id, "Top search match was not the OCR document!"
+    print(f"[PASS] Vector search matched OCR extracted content: '{ocr_results[0].text[:50]}...'")
+
+    # Clean up test docs
     vector_store.delete_document(doc.id)
+    vector_store.delete_document(ocr_doc.id)
     print("[PASS] Cleanup completed.")
-    print("\nALL RAG & EXAM UNIT TESTS PASSED!")
+    print("\nALL RAG, EXAM & OCR UNIT TESTS PASSED!")
 
 
 if __name__ == "__main__":

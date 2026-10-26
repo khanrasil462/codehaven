@@ -17,7 +17,7 @@ async def generate_code(request: CodegenRequest) -> CodegenResponse | StreamingR
         request.language.value,
         request.include_explanation,
     )
-    model = request.model or settings.chat_model
+    model = await ollama_client.get_effective_model(request.model)
 
     if request.stream:
         async def event_stream():

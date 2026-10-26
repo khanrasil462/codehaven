@@ -1,28 +1,88 @@
-# Dependencies
+# ==============================================================================
+# CodeHaven - .gitignore (Full Stack Python FastAPI + React/Electron)
+# ==============================================================================
+
+# --- Dependencies & Virtual Environments ---
 node_modules/
 frontend/node_modules/
 backend/.venv/
+.venv/
+venv/
+env/
+ENV/
+
+# --- Python Bytecode & Cache ---
+__pycache__/
 backend/__pycache__/
 backend/**/__pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
 
-# Local data
-data/
-*.db
-
-# Build output
+# --- Build Outputs ---
 frontend/dist/
 frontend/dist-electron/
+dist/
+dist-electron/
+out/
+*.tsbuildinfo
+frontend/*.tsbuildinfo
 
-# Environment
+# --- Local Databases & Sensitive User Notes ---
+# Ensures private chats, uploaded student notes, and vector embeddings stay local
+data/
+backend/data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+data/notes/
+data/codehaven.db
+backend/data/notes/
+backend/data/codehaven.db
+
+# --- Environment & Credentials ---
 .env
 .env.*
+!.env.example
+*.env
+*.local
 
-# OS / IDE
+# --- Operating System Files ---
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+desktop.ini
+
+# --- IDEs & Editors ---
 .idea/
 .vscode/
+*.swp
+*.swo
+*~
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
 
-# Logs
+# --- Logs & Temp ---
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+*.tmp
+*.temp
+scratch/

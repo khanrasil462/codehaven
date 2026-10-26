@@ -10,12 +10,15 @@ import {
   type DocumentInfo,
   type SourceChunk,
 } from "../api/client";
+import { AgentProcessTimeline, extractThoughtAndAnswer } from "./AgentProcessTimeline";
 
 interface NotesMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
   sources?: SourceChunk[];
+  startTime?: number;
+  endTime?: number;
 }
 
 interface NotesPanelProps {
@@ -79,26 +82,53 @@ export function NotesPanel({ initialConvId }: NotesPanelProps = {}) {
     }
   }, [initialConvId]);
 
-  async function handleFileUpload(file: File) {
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
+
+  async function handleFileUpload(fileList: FileList | File[]) {
+    const files = Array.from(fileList);
+    if (files.length === 0) return;
+
     setUploading(true);
     setUploadError(null);
-    try {
-      const newDoc = await uploadDocument(file);
-      setDocuments((prev) => [newDoc, ...prev.filter((d) => d.id !== newDoc.id)]);
+
+    const indexedDocs: DocumentInfo[] = [];
+    const errors: string[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      setUploadProgress(`Processing ${i + 1} of ${files.length}: ${file.name}...`);
+      try {
+        const newDoc = await uploadDocument(file);
+        indexedDocs.push(newDoc);
+      } catch (err) {
+        errors.push(`${file.name}: ${err instanceof Error ? err.message : "Upload failed"}`);
+      }
+    }
+
+    if (indexedDocs.length > 0) {
+      setDocuments((prev) => {
+        const newIds = new Set(indexedDocs.map((d) => d.id));
+        return [...indexedDocs, ...prev.filter((d) => !newIds.has(d.id))];
+      });
+
+      const summary = indexedDocs.map((d) => `"${d.filename}" (${d.chunk_count} chunks)`).join(", ");
       setMessages((prev) => [
         ...prev,
         {
           id: crypto.randomUUID(),
           role: "assistant",
-          content: `Document "${newDoc.filename}" successfully indexed into ${newDoc.chunk_count} local vector chunks! You can now ask questions about it.`,
+          content: `Successfully indexed ${indexedDocs.length} note(s) [${summary}]! Scanned pages and images were transcribed via local OCR. You can now ask questions about them.`,
         },
       ]);
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
     }
+
+    if (errors.length > 0) {
+      setUploadError(errors.join(" | "));
+    }
+
+    setUploading(false);
+    setUploadProgress(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   async function handleDelete(docId: string, filename: string) {
@@ -127,11 +157,12 @@ export function NotesPanel({ initialConvId }: NotesPanelProps = {}) {
       content: q,
     };
     const assistantId = crypto.randomUUID();
+    const assistantStartTime = Date.now();
     const nextMessages = [...messages, userMsg];
 
     setMessages([
       ...nextMessages,
-      { id: assistantId, role: "assistant", content: "" },
+      { id: assistantId, role: "assistant", content: "", startTime: assistantStartTime },
     ]);
     if (!customQuestion) setInput("");
     setQuerying(true);
@@ -184,6 +215,12 @@ export function NotesPanel({ initialConvId }: NotesPanelProps = {}) {
         )
       );
     } finally {
+      const finishTime = Date.now();
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId ? { ...m, endTime: finishTime } : m
+        )
+      );
       setQuerying(false);
       abortRef.current = null;
     }
@@ -219,8 +256,8 @@ export function NotesPanel({ initialConvId }: NotesPanelProps = {}) {
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             e.preventDefault();
-            const file = e.dataTransfer.files?.[0];
-            if (file) handleFileUpload(file);
+            const files = e.dataTransfer.files;
+            if (files && files.length > 0) handleFileUpload(files);
           }}
           onClick={() => fileInputRef.current?.click()}
         >
@@ -228,17 +265,18 @@ export function NotesPanel({ initialConvId }: NotesPanelProps = {}) {
             type="file"
             ref={fileInputRef}
             style={{ display: "none" }}
-            accept=".pdf,.docx,.txt,.md,.py,.js,.ts,.html,.css,.json"
+            multiple
+            accept=".pdf,.docx,.txt,.md,.py,.js,.ts,.html,.css,.json,.png,.jpg,.jpeg,.webp,.bmp,.tiff"
             onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) handleFileUpload(file);
+              const files = e.target.files;
+              if (files && files.length > 0) handleFileUpload(files);
             }}
           />
-          <div className="dropzone-icon">📄</div>
+          <div className="dropzone-icon">{uploading ? "⏳" : "📄"}</div>
           <div className="dropzone-text">
-            <strong>{uploading ? "Indexing document..." : "Upload Notes & Syllabus"}</strong>
-            <span>Drag & drop or click to browse</span>
-            <span className="file-types">Supports PDF, DOCX, TXT, MD, Code</span>
+            <strong>{uploading ? (uploadProgress || "Running OCR & Indexing...") : "Upload Notes, Scanned PDFs & Images"}</strong>
+            <span>Drag & drop multiple files or click to browse</span>
+            <span className="file-types">Supports PDF, Scanned Docs, Images (PNG/JPG OCR), Word & Code</span>
           </div>
         </div>
 
@@ -251,7 +289,7 @@ export function NotesPanel({ initialConvId }: NotesPanelProps = {}) {
             value={selectedDocId ?? ""}
             onChange={(e) => setSelectedDocId(e.target.value ? e.target.value : undefined)}
           >
-            <option value="">All Uploaded Notes</option>
+            <option value="">All Uploaded Notes ({documents.length})</option>
             {documents.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.filename}
@@ -265,12 +303,15 @@ export function NotesPanel({ initialConvId }: NotesPanelProps = {}) {
           {documents.length === 0 ? (
             <div className="empty-docs">
               <p>No notes uploaded yet.</p>
-              <span>Upload lecture notes or syllabus to start answering questions.</span>
+              <span>Upload lecture notes, scanned textbook pages, or image notes to start answering questions.</span>
             </div>
           ) : (
             documents.map((doc) => {
               const isSelected = selectedDocId === doc.id;
               const sizeKb = Math.round(doc.size_bytes / 1024);
+              const isImage = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff"].includes(doc.file_type);
+              const docIcon = isImage ? "🖼️" : doc.file_type === ".pdf" ? "📕" : doc.file_type === ".docx" ? "📘" : "📝";
+
               return (
                 <div
                   key={doc.id}
@@ -278,12 +319,11 @@ export function NotesPanel({ initialConvId }: NotesPanelProps = {}) {
                   onClick={() => setSelectedDocId(isSelected ? undefined : doc.id)}
                 >
                   <div className="doc-card-header">
-                    <span className="doc-icon">
-                      {doc.file_type === ".pdf" ? "📕" : doc.file_type === ".docx" ? "📘" : "📝"}
-                    </span>
+                    <span className="doc-icon">{docIcon}</span>
                     <strong className="doc-name" title={doc.filename}>
                       {doc.filename}
                     </strong>
+                    {isImage && <span className="ocr-pill">OCR</span>}
                     <button
                       type="button"
                       className="delete-btn"
@@ -303,8 +343,7 @@ export function NotesPanel({ initialConvId }: NotesPanelProps = {}) {
                   </div>
                 </div>
               );
-            })
-          )}
+            }))}
         </div>
       </section>
 
@@ -329,40 +368,65 @@ export function NotesPanel({ initialConvId }: NotesPanelProps = {}) {
         </div>
 
         <div className="messages">
-          {messages.map((m) => (
-            <article key={m.id} className={`message ${m.role}`}>
-              <div className="message-label">
-                {m.role === "user" ? "You" : "CodeHaven Notes Assistant"}
-              </div>
-              <div className="message-body">
-                {m.content || (querying ? "Searching notes & generating grounded answer..." : "")}
+          {messages.map((m) => {
+            const isCurrentlyGenerating = querying && m.id === messages[messages.length - 1]?.id;
+            const { thought, answer } = extractThoughtAndAnswer(m.content);
+            const showTimeline =
+              m.role === "assistant" &&
+              m.id !== "welcome" &&
+              (isCurrentlyGenerating || m.startTime !== undefined || !!thought);
 
-                {/* Sources & Citations Box */}
-                {m.sources && m.sources.length > 0 && (
-                  <details className="sources-container" open>
-                    <summary className="sources-summary">
-                      📚 {m.sources.length} Grounded Source Citations
-                    </summary>
-                    <div className="sources-list">
-                      {m.sources.map((src, idx) => (
-                        <div key={idx} className="source-item">
-                          <div className="source-header">
-                            <span className="source-badge">
-                              {src.filename} (Section {src.chunk_index})
-                            </span>
-                            <span className="similarity-badge">
-                              Match: {Math.round(src.similarity * 100)}%
-                            </span>
-                          </div>
-                          <p className="source-text">{src.text}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </details>
+            return (
+              <article key={m.id} className={`message ${m.role}`}>
+                <div className="message-label">
+                  <span className="msg-tag">
+                    {m.role === "user" ? "user@notes:~$" : "notes@rag:~$"}
+                  </span>
+                  <span className="msg-role">{m.role === "user" ? "You" : "CodeHaven Notes Assistant"}</span>
+                </div>
+
+                {showTimeline && (
+                  <AgentProcessTimeline
+                    isLive={isCurrentlyGenerating}
+                    startTime={m.startTime || Date.now() - 2000}
+                    endTime={m.endTime}
+                    mode="notes_qa"
+                    sourcesCount={m.sources?.length}
+                    thoughtText={thought}
+                    tokenCount={answer ? answer.split(/\s+/).filter(Boolean).length : 0}
+                  />
                 )}
-              </div>
-            </article>
-          ))}
+
+                <div className="message-body">
+                  {answer || (isCurrentlyGenerating ? "Searching notes & generating grounded answer..." : (m.content ? m.content : ""))}
+
+                  {/* Sources & Citations Box */}
+                  {m.sources && m.sources.length > 0 && (
+                    <details className="sources-container" open>
+                      <summary className="sources-summary">
+                        📚 {m.sources.length} Grounded Source Citations
+                      </summary>
+                      <div className="sources-list">
+                        {m.sources.map((src, idx) => (
+                          <div key={idx} className="source-item">
+                            <div className="source-header">
+                              <span className="source-badge">
+                                {src.filename} (Section {src.chunk_index})
+                              </span>
+                              <span className="similarity-badge">
+                                Match: {Math.round(src.similarity * 100)}%
+                              </span>
+                            </div>
+                            <p className="source-text">{src.text}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              </article>
+            );
+          })}
         </div>
 
         {/* Quick prompt suggestions */}
