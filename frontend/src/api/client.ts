@@ -18,7 +18,9 @@ export interface ChatMessage {
   content: string;
 }
 
-export type CodeLanguage = "python" | "javascript" | "typescript" | "react";
+export type CodeLanguage =
+  | "python" | "javascript" | "typescript" | "react"
+  | "java" | "c" | "cpp" | "powershell" | "bash";
 
 export interface CodegenRequest {
   prompt: string;
@@ -466,9 +468,8 @@ export async function fetchRuntimes(): Promise<RuntimeInfo[]> {
 // --- Image & Diagram Studio Types & API ---
 export interface ImageGenerateRequest {
   prompt: string;
-  style?: "vector" | "architecture" | "flowchart" | "datastructure" | "cyberpunk" | "ui_mockup";
-  aspect_ratio?: "16:9" | "1:1" | "4:3";
-  theme?: "terminal" | "dark" | "blueprint" | "neon";
+  style?: "flowchart" | "architecture" | "tree" | "process";
+  direction?: "auto" | "TB" | "LR";
   model?: string;
 }
 
@@ -480,6 +481,7 @@ export interface ImageItem {
   created_at: string;
   svg_content: string;
   title: string;
+  mxfile?: string;
 }
 
 export interface ImageGenerateResponse {
@@ -522,6 +524,7 @@ export interface SpeedStatusResponse {
   keep_alive: string;
   speed_estimate: string;
   all_models: string[];
+  selected_model: string | null;
 }
 
 export async function fetchSpeedStatus(): Promise<SpeedStatusResponse> {
@@ -537,5 +540,80 @@ export async function setSpeedMode(mode: "turbo" | "balanced"): Promise<{ status
     body: JSON.stringify({ mode }),
   });
   if (!res.ok) throw new Error("Failed to set speed mode");
+  return res.json();
+}
+
+export interface ModelState {
+  name: string;
+  role: string;
+  optional: boolean;
+  state: "ready" | "missing" | "queued" | "pulling" | "error";
+  completed: number;
+  total: number;
+  error: string | null;
+}
+
+export interface ModelsStatus {
+  ollama_installed: boolean;
+  ollama_running: boolean;
+  models: ModelState[];
+  ready: boolean;
+  busy: boolean;
+}
+
+export async function fetchModels(): Promise<ModelsStatus> {
+  const res = await fetch(`${API_BASE}/models`);
+  if (!res.ok) throw new Error("Backend unreachable");
+  return res.json();
+}
+
+export async function pullModels(name?: string): Promise<ModelsStatus> {
+  const query = name ? `?name=${encodeURIComponent(name)}` : "";
+  const res = await fetch(`${API_BASE}/models/pull${query}`, { method: "POST" });
+  if (!res.ok) throw new Error("Backend unreachable");
+  return res.json();
+}
+
+export interface SystemStats {
+  cpu_percent: number;
+  cpu_cores: number;
+  ram_percent: number;
+  ram_used: number;
+  ram_total: number;
+  loaded_models: { name: string; size: number; vram: number }[];
+}
+
+export async function fetchSystem(): Promise<SystemStats> {
+  const res = await fetch(`${API_BASE}/system`);
+  if (!res.ok) throw new Error("Backend unreachable");
+  return res.json();
+}
+
+export async function selectModel(name: string | null): Promise<void> {
+  const res = await fetch(`${API_BASE}/models/select`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error("Could not select model");
+}
+
+export interface UsageBucket {
+  prompt_tokens: number;
+  completion_tokens: number;
+  requests: number;
+}
+
+export interface MonthUsage extends UsageBucket {
+  month: string;
+  daily: (UsageBucket & { day: string })[];
+  models: (UsageBucket & { model: string })[];
+  today_tokens: number;
+  all_time_tokens: number;
+}
+
+export async function fetchUsage(month?: string): Promise<MonthUsage> {
+  const res = await fetch(`${API_BASE}/usage${month ? `?month=${month}` : ""}`);
+  if (!res.ok) throw new Error("Backend unreachable");
   return res.json();
 }
