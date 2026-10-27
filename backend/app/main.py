@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -8,13 +10,25 @@ from app.modules.codegen.router import router as codegen_router
 from app.modules.debug.router import router as debug_router
 from app.modules.history.router import router as history_router
 from app.modules.images.router import router as images_router
+from app.modules.models.router import router as models_router
+from app.modules.models.system import router as system_router
+from app.modules.models.service import model_manager
 from app.modules.interview.router import router as interview_router
 from app.modules.rag.router import router as rag_router
 from app.modules.runner.router import router as runner_router
 from app.modules.speed.router import router as speed_router
+from app.modules.usage.router import router as usage_router
 from app.modules.voice.router import router as voice_router
 
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    model_manager.start()
+    yield
+    model_manager.stop()
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title=settings.app_name,
     description="Offline AI coding assistant for students.",
     version="0.1.0",
@@ -22,6 +36,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
+    allow_origin_regex=r"^(null|file://.*|https?://(localhost|127\.0\.0\.1)(:\d+)?)$",
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
@@ -43,6 +58,9 @@ app.include_router(images_router, prefix="/api")
 app.include_router(speed_router, prefix="/api")
 app.include_router(voice_router, prefix="/api")
 app.include_router(interview_router, prefix="/api")
+app.include_router(models_router, prefix="/api")
+app.include_router(system_router, prefix="/api")
+app.include_router(usage_router, prefix="/api")
 
 
 @app.get("/api/health")

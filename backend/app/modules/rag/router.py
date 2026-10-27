@@ -129,7 +129,7 @@ async def generate_exam(request: ExamGenerateRequest) -> ExamPaperResponse | Str
         )
 
     messages = build_exam_paper_messages(request, notes_text)
-    model = request.model or settings.chat_model
+    model = await ollama_client.get_effective_model(request.model)
 
     if request.stream:
         async def exam_stream():

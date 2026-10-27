@@ -3,6 +3,11 @@ LANGUAGE_HINTS: dict[str, str] = {
     "javascript": "Use modern ES modules, Node.js compatible unless browser-only.",
     "typescript": "Use strict TypeScript with explicit types.",
     "react": "Use functional components with hooks; include necessary imports.",
+    "java": "Use a single public class Main with a main method; no packages.",
+    "c": "Use C11 with stdio.h; a single file with int main.",
+    "cpp": "Use C++17 with a single file and int main.",
+    "powershell": "Use PowerShell 7 compatible script.",
+    "bash": "Use portable bash with a shebang.",
 }
 
 

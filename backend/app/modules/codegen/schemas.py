@@ -8,6 +8,11 @@ class CodeLanguage(str, Enum):
     javascript = "javascript"
     typescript = "typescript"
     react = "react"
+    java = "java"
+    c = "c"
+    cpp = "cpp"
+    powershell = "powershell"
+    bash = "bash"
 
 
 class CodegenRequest(BaseModel):
