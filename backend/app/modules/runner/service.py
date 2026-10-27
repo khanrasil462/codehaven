@@ -117,7 +117,9 @@ class RunnerService:
                 return await self._run_java(req, work_dir, start_time)
             elif lang in ("c", "cpp", "c++"):
                 return await self._run_c(req, work_dir, start_time)
-            elif lang in ("powershell", "ps1", "shell", "bash"):
+            elif lang in ("bash", "sh", "shell"):
+                return await self._run_bash(req, work_dir, start_time)
+            elif lang in ("powershell", "ps1"):
                 return await self._run_powershell(req, work_dir, start_time)
             else:
                 elapsed = (time.perf_counter() - start_time) * 1000
@@ -322,7 +324,11 @@ class RunnerService:
         )
 
     async def _run_c(self, req: ExecuteRequest, work_dir: Path, start_time: float) -> ExecuteResponse:
-        gcc_bin = shutil.which("gcc") or shutil.which("g++") or shutil.which("clang")
+        is_cpp = req.language.lower().strip() in ("cpp", "c++")
+        if is_cpp:
+            gcc_bin = shutil.which("g++") or shutil.which("clang++")
+        else:
+            gcc_bin = shutil.which("gcc") or shutil.which("clang")
         if not gcc_bin:
             elapsed = (time.perf_counter() - start_time) * 1000
             return ExecuteResponse(
@@ -334,9 +340,9 @@ class RunnerService:
                 language="c",
             )
 
-        src_file = work_dir / "program.c"
+        src_file = work_dir / ("program.cpp" if is_cpp else "program.c")
         src_file.write_text(req.code, encoding="utf-8")
-        out_exe = work_dir / "program.exe"
+        out_exe = work_dir / ("program.exe" if os.name == "nt" else "program.out")
 
         compile_proc = await asyncio.create_subprocess_exec(
             gcc_bin,
@@ -367,6 +373,31 @@ class RunnerService:
             "c",
             start_time,
             "GCC C/C++",
+        )
+
+    async def _run_bash(self, req: ExecuteRequest, work_dir: Path, start_time: float) -> ExecuteResponse:
+        bash_bin = shutil.which("bash") or shutil.which("sh")
+        if not bash_bin:
+            elapsed = (time.perf_counter() - start_time) * 1000
+            return ExecuteResponse(
+                status="error",
+                stdout="",
+                stderr="bash executable not found.",
+                exit_code=1,
+                execution_time_ms=round(elapsed, 2),
+                language="bash",
+            )
+
+        script_file = work_dir / "script.sh"
+        script_file.write_text(req.code, encoding="utf-8")
+        return await self._execute_subprocess(
+            [bash_bin, str(script_file)],
+            work_dir,
+            req.stdin,
+            req.timeout_seconds,
+            "bash",
+            start_time,
+            "Bash",
         )
 
     async def _run_powershell(self, req: ExecuteRequest, work_dir: Path, start_time: float) -> ExecuteResponse:

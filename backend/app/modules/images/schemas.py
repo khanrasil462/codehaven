@@ -2,13 +2,9 @@ from pydantic import BaseModel, Field
 
 
 class ImageGenerateRequest(BaseModel):
-    prompt: str = Field(..., description="Prompt describing the diagram, visualization, or image to generate")
-    style: str = Field(
-        "vector",
-        description="Visual style: 'vector', 'architecture', 'flowchart', 'datastructure', 'cyberpunk', 'ui_mockup'",
-    )
-    aspect_ratio: str = Field("16:9", description="'16:9', '1:1', or '4:3'")
-    theme: str = Field("terminal", description="'terminal', 'dark', 'blueprint', or 'neon'")
+    prompt: str = Field(..., description="What the diagram should show")
+    style: str = Field("flowchart", description="'flowchart', 'architecture', 'tree' or 'process'")
+    direction: str = Field("auto", description="'auto', 'TB' (top to bottom) or 'LR' (left to right)")
     model: str | None = Field(None, description="Optional local LLM model override")
 
 
@@ -20,6 +16,7 @@ class ImageItem(BaseModel):
     created_at: str
     svg_content: str
     title: str = ""
+    mxfile: str = ""
 
 
 class ImageGenerateResponse(BaseModel):
