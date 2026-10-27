@@ -466,7 +466,17 @@ export async function fetchRuntimes(): Promise<RuntimeInfo[]> {
 // --- Image & Diagram Studio Types & API ---
 export interface ImageGenerateRequest {
   prompt: string;
-  style?: "vector" | "architecture" | "flowchart" | "datastructure" | "cyberpunk" | "ui_mockup";
+  engine?: "auto" | "ai_diffusion" | "vector_diagram";
+  style?:
+    | "cyberpunk"
+    | "photorealistic"
+    | "3d_render"
+    | "anime"
+    | "architecture"
+    | "datastructure"
+    | "flowchart"
+    | "vector"
+    | "ui_mockup";
   aspect_ratio?: "16:9" | "1:1" | "4:3";
   theme?: "terminal" | "dark" | "blueprint" | "neon";
   model?: string;
@@ -478,8 +488,10 @@ export interface ImageItem {
   style: string;
   format: string;
   created_at: string;
-  svg_content: string;
+  svg_content?: string;
+  image_url?: string;
   title: string;
+  engine?: string;
 }
 
 export interface ImageGenerateResponse {

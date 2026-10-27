@@ -71,11 +71,18 @@ async def run_tests():
 
     print("\n=== Testing CodeHaven Image & Diagram Studio ===")
 
-    # 7. Fallback / procedural SVG generator
-    fallback_svg = image_service._generate_fallback_svg("Microservices Architecture", "architecture", "0 0 1200 675")
-    assert "<svg" in fallback_svg and "</svg>" in fallback_svg
-    assert "Microservices Architecture" in fallback_svg
-    print("[PASS] Fallback SVG generator produces valid scalable XML markup.")
+    # 7. Procedural SVG generator
+    diagram_res = image_service._generate_vector_diagram(
+        ImageGenerateRequest(
+            prompt="Microservices Architecture with API Gateway and Redis",
+            style="architecture",
+            engine="vector_diagram",
+        )
+    )
+    assert diagram_res.image.format == "svg"
+    assert "<svg" in (diagram_res.image.svg_content or "")
+    assert "</svg>" in (diagram_res.image.svg_content or "")
+    print(f"[PASS] Vector diagram generator produces valid scalable SVG: {diagram_res.image.title}")
 
     # 8. List & Catalog check
     images = image_service.list_images()

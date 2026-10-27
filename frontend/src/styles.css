@@ -1308,6 +1308,42 @@ button {
   border-bottom: 1px solid var(--border);
 }
 
+.engine-toggle-group {
+  display: flex;
+  gap: 0.35rem;
+  background: var(--bg-surface);
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.engine-toggle-btn {
+  flex: 1;
+  padding: 0.4rem 0.45rem;
+  font-size: 0.725rem;
+  font-family: var(--font-mono);
+  background: transparent;
+  color: var(--text-soft);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.engine-toggle-btn:hover {
+  background: var(--bg-elevated);
+  color: #ffffff;
+}
+
+.engine-toggle-btn.active {
+  background: var(--bg-elevated);
+  color: var(--cyan);
+  border-color: rgba(56, 189, 248, 0.4);
+  font-weight: 600;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.15);
+}
+
 .form-group {
   display: flex;
   flex-direction: column;
@@ -1460,6 +1496,17 @@ button {
   width: 60px;
   height: 40px;
   display: block;
+}
+
+.thumb-raster-preview {
+  width: 60px;
+  height: 40px;
+  object-fit: cover;
+  display: block;
+}
+
+.thumb-placeholder {
+  font-size: 1.25rem;
 }
 
 .gallery-info {
@@ -1619,6 +1666,24 @@ button {
   width: 100%;
   height: auto;
   display: block;
+}
+
+.raster-stage-container {
+  width: 100%;
+  max-width: 1100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stage-raster-image {
+  max-width: 100%;
+  max-height: 72vh;
+  object-fit: contain;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.75), 0 0 30px rgba(56, 189, 248, 0.2);
+  transition: transform 0.2s ease;
 }
 
 .stage-empty {
