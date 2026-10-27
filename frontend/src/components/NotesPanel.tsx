@@ -10,7 +10,8 @@ import {
   type DocumentInfo,
   type SourceChunk,
 } from "../api/client";
-import { AgentProcessTimeline, extractThoughtAndAnswer } from "./AgentProcessTimeline";
+import { extractThoughtAndAnswer } from "./AgentProcessTimeline";
+import { Markdown } from "../lib/markdown";
 
 interface NotesMessage {
   id: string;
@@ -246,7 +247,7 @@ export function NotesPanel({ initialConvId }: NotesPanelProps = {}) {
             disabled={loadingDocs}
             title="Refresh documents list"
           >
-            ↻
+            Refresh
           </button>
         </div>
 
@@ -272,7 +273,7 @@ export function NotesPanel({ initialConvId }: NotesPanelProps = {}) {
               if (files && files.length > 0) handleFileUpload(files);
             }}
           />
-          <div className="dropzone-icon">{uploading ? "⏳" : "📄"}</div>
+          <div className="dropzone-icon">{uploading ? "" : ""}</div>
           <div className="dropzone-text">
             <strong>{uploading ? (uploadProgress || "Running OCR & Indexing...") : "Upload Notes, Scanned PDFs & Images"}</strong>
             <span>Drag & drop multiple files or click to browse</span>
@@ -310,7 +311,7 @@ export function NotesPanel({ initialConvId }: NotesPanelProps = {}) {
               const isSelected = selectedDocId === doc.id;
               const sizeKb = Math.round(doc.size_bytes / 1024);
               const isImage = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff"].includes(doc.file_type);
-              const docIcon = isImage ? "🖼️" : doc.file_type === ".pdf" ? "📕" : doc.file_type === ".docx" ? "📘" : "📝";
+              const docIcon = isImage ? "" : doc.file_type === ".pdf" ? "" : doc.file_type === ".docx" ? "" : "";
 
               return (
                 <div
@@ -332,9 +333,7 @@ export function NotesPanel({ initialConvId }: NotesPanelProps = {}) {
                         e.stopPropagation();
                         handleDelete(doc.id, doc.filename);
                       }}
-                    >
-                      ✕
-                    </button>
+                    >×</button>
                   </div>
                   <div className="doc-meta">
                     <span>{doc.chunk_count} chunks</span>
@@ -367,64 +366,64 @@ export function NotesPanel({ initialConvId }: NotesPanelProps = {}) {
           )}
         </div>
 
-        <div className="messages">
+        <div className="messages notes-thread">
           {messages.map((m) => {
             const isCurrentlyGenerating = querying && m.id === messages[messages.length - 1]?.id;
-            const { thought, answer } = extractThoughtAndAnswer(m.content);
-            const showTimeline =
-              m.role === "assistant" &&
-              m.id !== "welcome" &&
-              (isCurrentlyGenerating || m.startTime !== undefined || !!thought);
+            const { answer } = extractThoughtAndAnswer(m.content);
 
             return (
-              <article key={m.id} className={`message ${m.role}`}>
-                <div className="message-label">
-                  <span className="msg-tag">
-                    {m.role === "user" ? "user@notes:~$" : "notes@rag:~$"}
-                  </span>
-                  <span className="msg-role">{m.role === "user" ? "You" : "CodeHaven Notes Assistant"}</span>
-                </div>
-
-                {showTimeline && (
-                  <AgentProcessTimeline
-                    isLive={isCurrentlyGenerating}
-                    startTime={m.startTime || Date.now() - 2000}
-                    endTime={m.endTime}
-                    mode="notes_qa"
-                    sourcesCount={m.sources?.length}
-                    thoughtText={thought}
-                    tokenCount={answer ? answer.split(/\s+/).filter(Boolean).length : 0}
-                  />
-                )}
-
-                <div className="message-body">
-                  {answer || (isCurrentlyGenerating ? "Searching notes & generating grounded answer..." : (m.content ? m.content : ""))}
-
-                  {/* Sources & Citations Box */}
-                  {m.sources && m.sources.length > 0 && (
-                    <details className="sources-container" open>
-                      <summary className="sources-summary">
-                        📚 {m.sources.length} Grounded Source Citations
-                      </summary>
-                      <div className="sources-list">
-                        {m.sources.map((src, idx) => (
-                          <div key={idx} className="source-item">
-                            <div className="source-header">
-                              <span className="source-badge">
-                                {src.filename} (Section {src.chunk_index})
+              <div key={m.id} className={`msg ${m.role}`}>
+                {m.role === "user" ? (
+                  <div className="bubble">{m.content}</div>
+                ) : (
+                  <>
+                    <div className="avatar">CH</div>
+                    <div className="body">
+                      {answer ? (
+                        <div className="answer-card">
+                          <Markdown text={answer} />
+                        </div>
+                      ) : (
+                        isCurrentlyGenerating && (
+                          <span className="typing-line">
+                            <span className="typing">
+                              <i />
+                              <i />
+                              <i />
+                            </span>
+                            Searching your notes…
+                          </span>
+                        )
+                      )}
+                      {m.sources && m.sources.length > 0 && (
+                        <details className="sources-container">
+                          <summary className="sources-summary">
+                            Sources
+                            {m.sources.map((src, idx) => (
+                              <span key={idx} className="source-chip">
+                                {src.filename}
                               </span>
-                              <span className="similarity-badge">
-                                Match: {Math.round(src.similarity * 100)}%
-                              </span>
-                            </div>
-                            <p className="source-text">{src.text}</p>
+                            ))}
+                          </summary>
+                          <div className="sources-list">
+                            {m.sources.map((src, idx) => (
+                              <div key={idx} className="source-item">
+                                <div className="source-header">
+                                  <span className="source-badge">
+                                    {src.filename} · section {src.chunk_index}
+                                  </span>
+                                  <span className="similarity-badge">{Math.round(src.similarity * 100)}% match</span>
+                                </div>
+                                <p className="source-text">{src.text}</p>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                    </details>
-                  )}
-                </div>
-              </article>
+                        </details>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
             );
           })}
         </div>
@@ -437,7 +436,7 @@ export function NotesPanel({ initialConvId }: NotesPanelProps = {}) {
             onClick={() => askQuestion("Summarize the main concepts and topics in these notes.")}
             disabled={querying || documents.length === 0}
           >
-            📋 Summarize Notes
+            Summarize Notes
           </button>
           <button
             type="button"
@@ -445,7 +444,7 @@ export function NotesPanel({ initialConvId }: NotesPanelProps = {}) {
             onClick={() => askQuestion("What are the key definitions and formulas explained here?")}
             disabled={querying || documents.length === 0}
           >
-            🔍 Key Definitions
+            Key Definitions
           </button>
           <button
             type="button"
@@ -453,7 +452,7 @@ export function NotesPanel({ initialConvId }: NotesPanelProps = {}) {
             onClick={() => askQuestion("What are the most likely exam questions from these notes?")}
             disabled={querying || documents.length === 0}
           >
-            🎯 High-Yield Topics
+            High-Yield Topics
           </button>
           <button
             type="button"
@@ -461,7 +460,7 @@ export function NotesPanel({ initialConvId }: NotesPanelProps = {}) {
             onClick={() => askQuestion("Provide a practical coding example explaining this concept.")}
             disabled={querying || documents.length === 0}
           >
-            💻 Code Example
+            Code Example
           </button>
         </div>
 

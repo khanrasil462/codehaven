@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   generateImage,
   fetchImages,
@@ -7,210 +7,200 @@ import {
   type ImageGenerateRequest,
 } from "../api/client";
 
-interface PresetPrompt {
-  label: string;
-  prompt: string;
-  style: "architecture" | "datastructure" | "flowchart" | "vector" | "cyberpunk" | "ui_mockup";
-}
+type DiagramType = NonNullable<ImageGenerateRequest["style"]>;
+type Direction = NonNullable<ImageGenerateRequest["direction"]>;
 
-const PRESETS: PresetPrompt[] = [
-  {
-    label: "Microservices Architecture",
-    prompt: "Modern Microservices Architecture diagram: API Gateway routing to Auth Service, Order Service, and Notification Service, backed by PostgreSQL, Redis Cache, and RabbitMQ message broker with glowing data pathways.",
-    style: "architecture",
-  },
-  {
-    label: "Binary Search Tree Visualizer",
-    prompt: "Binary Search Tree data structure diagram showing root node 50 branching to left child 30 and right child 70, with balance factors, directional edge arrows, and color-coded search pathways.",
-    style: "datastructure",
-  },
-  {
-    label: "OAuth2 Authorization Flow",
-    prompt: "OAuth2.0 Authorization Code flow diagram between Client Browser, Authorization Server, and Resource API with step-by-step numbered arrow exchanges (Auth Request, Token Exchange, Protected Resource).",
-    style: "flowchart",
-  },
-  {
-    label: "Cyberpunk Terminal Logo",
-    prompt: "Futuristic Cyberpunk Terminal Emblem with glowing neon skull/chip matrix, digital circuitry lines, Japanese tech typography, and electric cyan phosphor green aura.",
-    style: "cyberpunk",
-  },
-  {
-    label: "React Component Lifecycle",
-    prompt: "Interactive React Component Lifecycle state machine diagram: Mounting (constructor, render, componentDidMount), Updating (shouldComponentUpdate, render), and Unmounting.",
-    style: "flowchart",
-  },
-  {
-    label: "Git Branching Strategy",
-    prompt: "GitFlow branching diagram showing Main/Production branch in emerald, Develop branch in cyan, Feature branches merging in, and Hotfix branch patching directly with commit nodes.",
-    style: "architecture",
-  },
+const PRESETS: { label: string; prompt: string; style: DiagramType }[] = [
+  { label: "Login flow", prompt: "User login flow with email and password check, error message and dashboard", style: "flowchart" },
+  { label: "Microservices", prompt: "Microservices system: browser, API gateway, auth service, order service, notification service, PostgreSQL, Redis cache and RabbitMQ", style: "architecture" },
+  { label: "Binary search tree", prompt: "Binary search tree with root 50, children 30 and 70, then 20, 40, 60 and 80", style: "tree" },
+  { label: "OAuth2 login", prompt: "OAuth2 authorization code flow between user, client app, authorization server and resource API", style: "process" },
+  { label: "CI/CD pipeline", prompt: "CI/CD pipeline: commit, build, unit tests, tests pass decision, deploy to staging, deploy to production", style: "flowchart" },
 ];
 
-interface ImageStudioPanelProps {
-  onOpenInEditor?: (code: string, language: string) => void;
+const svgUrl = (svg: string) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+
+function svgSize(svg: string): { w: number; h: number } {
+  const m = svg.match(/viewBox="[\d.\-]+ [\d.\-]+ ([\d.]+) ([\d.]+)"/);
+  if (m) return { w: parseFloat(m[1]), h: parseFloat(m[2]) };
+  const w = svg.match(/<svg[^>]*\swidth="([\d.]+)/);
+  const h = svg.match(/<svg[^>]*\sheight="([\d.]+)/);
+  return { w: w ? parseFloat(w[1]) : 1200, h: h ? parseFloat(h[1]) : 675 };
 }
 
-export function ImageStudioPanel({ onOpenInEditor }: ImageStudioPanelProps) {
-  const [prompt, setPrompt] = useState(PRESETS[0].prompt);
-  const [style, setStyle] = useState<ImageGenerateRequest["style"]>("architecture");
-  const [theme, setTheme] = useState<ImageGenerateRequest["theme"]>("terminal");
-  const [aspectRatio, setAspectRatio] = useState<ImageGenerateRequest["aspect_ratio"]>("16:9");
-  const [generating, setGenerating] = useState(false);
-  const [currentImage, setCurrentImage] = useState<ImageItem | null>(null);
-  const [history, setHistory] = useState<ImageItem[]>([]);
-  const [copied, setCopied] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const previewRef = useRef<HTMLDivElement | null>(null);
+function Viewer({ item }: { item: ImageItem }) {
+  const box = useRef<HTMLDivElement | null>(null);
+  const [view, setView] = useState({ scale: 1, x: 0, y: 0 });
+  const drag = useRef<{ x: number; y: number; vx: number; vy: number } | null>(null);
+  const size = svgSize(item.svg_content);
+
+  const fit = useCallback(() => {
+    const el = box.current;
+    if (!el) return;
+    const pad = 48;
+    const scale = Math.min((el.clientWidth - pad) / size.w, (el.clientHeight - pad) / size.h, 2.5);
+    setView({
+      scale,
+      x: (el.clientWidth - size.w * scale) / 2,
+      y: (el.clientHeight - size.h * scale) / 2,
+    });
+  }, [size.w, size.h]);
 
   useEffect(() => {
-    loadGallery();
+    fit();
+    const el = box.current;
+    if (!el) return;
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [item.id, fit]);
+
+  const zoomAt = useCallback((factor: number, cx?: number, cy?: number) => {
+    const el = box.current;
+    if (!el) return;
+    setView((v) => {
+      const px = cx ?? el.clientWidth / 2;
+      const py = cy ?? el.clientHeight / 2;
+      const scale = Math.min(8, Math.max(0.1, v.scale * factor));
+      const k = scale / v.scale;
+      return { scale, x: px - (px - v.x) * k, y: py - (py - v.y) * k };
+    });
   }, []);
 
-  async function loadGallery() {
-    try {
-      const items = await fetchImages();
-      setHistory(items);
-      if (items.length > 0 && !currentImage) {
-        setCurrentImage(items[0]);
-      }
-    } catch {
-      // Backend may be starting
-    }
-  }
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      zoomAt(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX - r.left, e.clientY - r.top);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [zoomAt]);
 
-  async function handleGenerate(customPrompt?: string) {
-    const p = (customPrompt || prompt).trim();
+  return (
+    <div className="viewer">
+      <div
+        ref={box}
+        className="viewer-canvas"
+        onPointerDown={(e) => {
+          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          drag.current = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y };
+        }}
+        onPointerMove={(e) => {
+          const d = drag.current;
+          if (d) setView((v) => ({ ...v, x: d.vx + e.clientX - d.x, y: d.vy + e.clientY - d.y }));
+        }}
+        onPointerUp={() => (drag.current = null)}
+        onDoubleClick={fit}
+      >
+        <img
+          alt={item.title}
+          draggable={false}
+          src={svgUrl(item.svg_content)}
+          style={{ left: view.x, top: view.y, width: size.w * view.scale, height: size.h * view.scale }}
+        />
+      </div>
+      <div className="viewer-zoom">
+        <button type="button" onClick={() => zoomAt(1 / 1.25)} aria-label="Zoom out">−</button>
+        <span>{Math.round(view.scale * 100)}%</span>
+        <button type="button" onClick={() => zoomAt(1.25)} aria-label="Zoom in">+</button>
+        <button type="button" onClick={fit}>Fit</button>
+        <button type="button" onClick={() => zoomAt(1 / view.scale)}>100%</button>
+      </div>
+    </div>
+  );
+}
+
+export function ImageStudioPanel(_props: { onOpenInEditor?: () => void }) {
+  const [prompt, setPrompt] = useState("");
+  const [style, setStyle] = useState<DiagramType>("flowchart");
+  const [direction, setDirection] = useState<Direction>("auto");
+  const [generating, setGenerating] = useState(false);
+  const [current, setCurrent] = useState<ImageItem | null>(null);
+  const [history, setHistory] = useState<ImageItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchImages()
+      .then((items) => {
+        setHistory(items);
+        if (items.length) setCurrent(items[0]);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  async function generate(text = prompt, type = style) {
+    const p = text.trim();
     if (!p || generating) return;
-
     setGenerating(true);
-    setErrorMsg(null);
-
+    setError(null);
     try {
-      const res = await generateImage({
-        prompt: p,
-        style,
-        theme,
-        aspect_ratio: aspectRatio,
-      });
-
-      setCurrentImage(res.image);
-      setHistory((prev) => [res.image, ...prev.filter((item) => item.id !== res.image.id)]);
+      const res = await generateImage({ prompt: p, style: type, direction });
+      setCurrent(res.image);
+      setHistory((h) => [res.image, ...h.filter((i) => i.id !== res.image.id)]);
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Failed to generate image.");
+      const raw = err instanceof Error ? err.message : "Could not draw the diagram.";
+      try {
+        setError(JSON.parse(raw).detail ?? raw);
+      } catch {
+        setError(raw);
+      }
     } finally {
       setGenerating(false);
     }
   }
 
-  function handleSelectPreset(preset: PresetPrompt) {
-    setPrompt(preset.prompt);
-    setStyle(preset.style);
-    handleGenerate(preset.prompt);
+  async function remove(id: string) {
+    await deleteImage(id).catch(() => undefined);
+    const rest = history.filter((i) => i.id !== id);
+    setHistory(rest);
+    if (current?.id === id) setCurrent(rest[0] ?? null);
   }
 
-  async function handleDelete(id: string) {
-    try {
-      await deleteImage(id);
-      setHistory((prev) => prev.filter((item) => item.id !== id));
-      if (currentImage?.id === id) {
-        const remaining = history.filter((item) => item.id !== id);
-        setCurrentImage(remaining.length > 0 ? remaining[0] : null);
-      }
-    } catch (err) {
-      alert("Failed to delete image");
-    }
-  }
-
-  function handleDownloadSVG() {
-    if (!currentImage?.svg_content) return;
-    const blob = new Blob([currentImage.svg_content], { type: "image/svg+xml;charset=utf-8" });
+  function download() {
+    if (!current) return;
+    const blob = new Blob([current.svg_content], { type: "image/svg+xml;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${currentImage.title.replace(/[^a-zA-Z0-9_-]/g, "_") || "codehaven_vector"}.svg`;
+    a.download = `${current.title.replace(/[^a-zA-Z0-9_-]+/g, "_") || "diagram"}.svg`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
-  function handleExportPNG() {
-    if (!currentImage?.svg_content) return;
-    const svgStr = currentImage.svg_content;
-    const blob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const img = new Image();
-
-    img.onload = () => {
-      const scale = 2; // High-res 2x export
-      const canvas = document.createElement("canvas");
-      canvas.width = (img.width || 1200) * scale;
-      canvas.height = (img.height || 675) * scale;
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.scale(scale, scale);
-        ctx.drawImage(img, 0, 0);
-        const pngUrl = canvas.toDataURL("image/png");
-        const a = document.createElement("a");
-        a.href = pngUrl;
-        a.download = `${currentImage.title.replace(/[^a-zA-Z0-9_-]/g, "_") || "codehaven_diagram"}.png`;
-        a.click();
-      }
-      URL.revokeObjectURL(url);
-    };
-    img.src = url;
+  function openInDiagramsNet() {
+    if (!current) return;
+    const xml = current.mxfile;
+    const url =
+      xml && xml.length < 30000
+        ? `https://app.diagrams.net/#R${encodeURIComponent(xml)}`
+        : "https://app.diagrams.net/";
+    window.open(url, "_blank", "noopener");
   }
 
-  function handleCopySVG() {
-    if (!currentImage?.svg_content) return;
-    navigator.clipboard.writeText(currentImage.svg_content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
-  function handleOpenInEditor() {
-    if (!currentImage?.svg_content || !onOpenInEditor) return;
-    onOpenInEditor(currentImage.svg_content, "xml");
-  }
+  const hasEditable = !!current?.svg_content.includes('content="&lt;mxfile');
 
   return (
     <div className="layout studio-layout">
-      {/* Studio Configuration Sidebar */}
       <aside className="studio-sidebar">
         <div className="panel-header">
-          <div className="panel-header-left">
-            <span className="terminal-prompt-symbol">🎨</span>
-            <strong>Visual & Diagram Studio</strong>
-          </div>
-          <span className="badge-tag">100% OFFLINE</span>
+          <strong>Diagrams</strong>
+          <span className="badge-tag">offline</span>
         </div>
 
-        {/* Preset Prompt Pills */}
-        <div className="preset-container">
-          <span className="section-label">QUICK CS PRESETS</span>
-          <div className="preset-grid">
-            {PRESETS.map((p, idx) => (
-              <button
-                key={idx}
-                type="button"
-                className="preset-btn"
-                onClick={() => handleSelectPreset(p)}
-                disabled={generating}
-              >
-                <span className="preset-icon">⚡</span>
-                <span className="preset-text">{p.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Generation Form */}
         <div className="studio-form">
           <label className="form-group">
-            <span className="form-label">PROMPT / DIAGRAM DESCRIPTION</span>
+            <span>Describe the diagram</span>
             <textarea
               className="studio-textarea"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Describe the system architecture, flowchart, data structure, or visual art to generate..."
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) void generate();
+              }}
+              placeholder="e.g. Steps of a user signing up, with an email check"
               rows={4}
               disabled={generating}
             />
@@ -218,190 +208,120 @@ export function ImageStudioPanel({ onOpenInEditor }: ImageStudioPanelProps) {
 
           <div className="form-row">
             <label className="form-group">
-              <span className="form-label">STYLE</span>
-              <select
-                value={style}
-                onChange={(e) => setStyle(e.target.value as any)}
-                disabled={generating}
-              >
-                <option value="architecture">🏗 Architecture Diagram</option>
-                <option value="datastructure">🌳 Data Structure / Trees</option>
-                <option value="flowchart">🔀 Flowchart / Logic Flow</option>
-                <option value="cyberpunk">⚡ Cyberpunk / Terminal Art</option>
-                <option value="vector">📐 Clean Vector Graphic</option>
-                <option value="ui_mockup">📱 UI / Component Wireframe</option>
+              <span>Type</span>
+              <select value={style} onChange={(e) => setStyle(e.target.value as DiagramType)} disabled={generating}>
+                <option value="flowchart">Flowchart</option>
+                <option value="architecture">Architecture</option>
+                <option value="tree">Tree / hierarchy</option>
+                <option value="process">Process steps</option>
               </select>
             </label>
-
             <label className="form-group">
-              <span className="form-label">THEME</span>
-              <select
-                value={theme}
-                onChange={(e) => setTheme(e.target.value as any)}
-                disabled={generating}
-              >
-                <option value="terminal">🟢 Terminal (Obsidian/Green)</option>
-                <option value="dark">🔵 Deep Blue / Cyan</option>
-                <option value="neon">🟣 Cyber Neon / Violet</option>
-                <option value="blueprint">📐 Technical Blueprint</option>
+              <span>Direction</span>
+              <select value={direction} onChange={(e) => setDirection(e.target.value as Direction)} disabled={generating}>
+                <option value="auto">Auto</option>
+                <option value="TB">Top to bottom</option>
+                <option value="LR">Left to right</option>
               </select>
             </label>
           </div>
 
-          <label className="form-group">
-            <span className="form-label">ASPECT RATIO</span>
-            <div className="aspect-buttons">
-              {(["16:9", "1:1", "4:3"] as const).map((ar) => (
-                <button
-                  key={ar}
-                  type="button"
-                  className={`aspect-btn ${aspectRatio === ar ? "active" : ""}`}
-                  onClick={() => setAspectRatio(ar)}
-                  disabled={generating}
-                >
-                  {ar === "16:9" ? "🖥 16:9" : ar === "1:1" ? "⬛ 1:1" : "📺 4:3"}
-                </button>
-              ))}
-            </div>
-          </label>
+          {error && <div className="studio-error">{error}</div>}
 
-          {errorMsg && <div className="studio-error">{errorMsg}</div>}
-
-          <button
-            type="button"
-            className={`generate-visual-btn ${generating ? "generating" : ""}`}
-            onClick={() => handleGenerate()}
-            disabled={generating || !prompt.trim()}
-          >
-            {generating ? "⏳ Synthesizing Vector Graphics..." : "⚡ Generate Diagram / Art"}
+          <button type="button" className="generate-visual-btn" onClick={() => void generate()} disabled={generating || !prompt.trim()}>
+            {generating ? "Drawing…" : "Draw diagram"}
           </button>
+          <span className="muted studio-hint">Ctrl+Enter to draw. Tip: Deep mode gives better diagrams.</span>
         </div>
 
-        {/* Gallery Drawer */}
+        <div className="preset-container">
+          <span className="section-label">Examples</span>
+          <div className="preset-grid">
+            {PRESETS.map((p) => (
+              <button
+                key={p.label}
+                type="button"
+                className="preset-btn"
+                disabled={generating}
+                onClick={() => {
+                  setPrompt(p.prompt);
+                  setStyle(p.style);
+                  void generate(p.prompt, p.style);
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="gallery-section">
           <div className="gallery-header">
-            <span className="section-label">SAVED GALLERY ({history.length})</span>
-            {history.length > 0 && (
-              <span className="gallery-hint">Click to preview</span>
-            )}
+            <span className="section-label">Saved ({history.length})</span>
           </div>
           <div className="gallery-list">
-            {history.length === 0 ? (
-              <div className="empty-gallery">No visuals generated yet. Try a preset above!</div>
-            ) : (
-              history.map((item) => (
-                <div
-                  key={item.id}
-                  className={`gallery-card ${currentImage?.id === item.id ? "active" : ""}`}
-                  onClick={() => setCurrentImage(item)}
-                >
-                  <div className="gallery-thumb">
-                    <div
-                      className="thumb-svg-preview"
-                      dangerouslySetInnerHTML={{ __html: item.svg_content }}
-                    />
-                  </div>
-                  <div className="gallery-info">
-                    <span className="gallery-title" title={item.prompt}>
-                      {item.title}
-                    </span>
-                    <div className="gallery-meta">
-                      <span className="gallery-style">{item.style}</span>
-                      <button
-                        type="button"
-                        className="gallery-del"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDelete(item.id);
-                        }}
-                        title="Delete image"
-                      >
-                        ✕
-                      </button>
-                    </div>
+            {history.length === 0 && <div className="empty-gallery">Nothing drawn yet.</div>}
+            {history.map((item) => (
+              <div
+                key={item.id}
+                className={`gallery-card ${current?.id === item.id ? "active" : ""}`}
+                onClick={() => setCurrent(item)}
+              >
+                <div className="gallery-thumb">
+                  <img alt="" src={svgUrl(item.svg_content)} />
+                </div>
+                <div className="gallery-info">
+                  <span className="gallery-title" title={item.prompt}>{item.title}</span>
+                  <div className="gallery-meta">
+                    <span className="gallery-style">{item.style}</span>
+                    <button
+                      type="button"
+                      className="gallery-del"
+                      title="Delete"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void remove(item.id);
+                      }}
+                    >
+                      ×
+                    </button>
                   </div>
                 </div>
-              ))
-            )}
+              </div>
+            ))}
           </div>
         </div>
       </aside>
 
-      {/* Main Interactive Stage */}
       <main className="studio-stage">
-        {currentImage ? (
+        {current ? (
           <div className="stage-content">
-            {/* Stage Toolbar */}
             <div className="stage-toolbar">
               <div className="stage-info">
-                <span className="stage-prompt-symbol">❯_</span>
-                <strong className="stage-title">{currentImage.title}</strong>
-                <span className="badge-style">{currentImage.style}</span>
+                <strong className="stage-title">{current.title}</strong>
+                <span className="badge-style">{current.style}</span>
               </div>
-
               <div className="stage-actions">
-                <button
-                  type="button"
-                  className="stage-btn"
-                  onClick={handleExportPNG}
-                  title="Export high-resolution PNG image"
-                >
-                  🖼 Download PNG
+                <button type="button" className="stage-btn" onClick={openInDiagramsNet} disabled={!hasEditable && !current.mxfile} title="Opens app.diagrams.net in your browser (needs internet)">
+                  Open in diagrams.net
                 </button>
-                <button
-                  type="button"
-                  className="stage-btn"
-                  onClick={handleDownloadSVG}
-                  title="Download vector SVG file"
-                >
-                  📐 Download SVG
+                <button type="button" className="stage-btn stage-btn-primary" onClick={download}>
+                  Download SVG
                 </button>
-                <button
-                  type="button"
-                  className="stage-btn"
-                  onClick={handleCopySVG}
-                  title="Copy SVG markup"
-                >
-                  {copied ? "✓ Copied" : "📋 Copy SVG"}
-                </button>
-                {onOpenInEditor && (
-                  <button
-                    type="button"
-                    className="stage-btn stage-btn-primary"
-                    onClick={handleOpenInEditor}
-                    title="Inspect & edit SVG code in Monaco Editor"
-                  >
-                    ✏ Edit Code in Editor
-                  </button>
-                )}
               </div>
             </div>
-
-            {/* SVG Visual Canvas */}
-            <div className="canvas-wrapper" ref={previewRef}>
-              <div
-                className="svg-stage-container"
-                dangerouslySetInnerHTML={{ __html: currentImage.svg_content }}
-              />
+            <Viewer item={current} />
+            <div className="stage-foot muted">
+              Scroll to zoom, drag to move, double-click to fit. The SVG opens as editable shapes in diagrams.net (File → Open from → Device).
             </div>
           </div>
         ) : (
           <div className="stage-empty">
-            <div className="empty-terminal-icon">🎨</div>
-            <h3>CodeHaven AI Visual & Diagram Studio</h3>
-            <p>
-              Generate production-grade System Architecture Diagrams, Flowcharts, Data Structure
-              visualizations, and Cyberpunk Vector Graphics 100% offline.
-            </p>
-            <div className="empty-actions">
-              <button
-                type="button"
-                className="primary-btn"
-                onClick={() => handleGenerate(PRESETS[0].prompt)}
-              >
-                ⚡ Generate Microservices Architecture
-              </button>
-            </div>
+            <h3>Diagrams</h3>
+            <p>Describe a flowchart, architecture, tree or process. CodeHaven draws it in draw.io style, offline, and you can download it as SVG and edit it in diagrams.net.</p>
+            <button type="button" className="primary-btn" onClick={() => PRESETS[0] && void generate(PRESETS[0].prompt, PRESETS[0].style)}>
+              Try the login flow example
+            </button>
           </div>
         )}
       </main>

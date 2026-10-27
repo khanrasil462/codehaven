@@ -71,7 +71,7 @@ export function AgentProcessTimeline({
         ? "Analyzed student query against syllabus"
         : "Analyzed prompt & programming language context",
     sublabel: codeLines > 0 ? `#L1-${codeLines} in Monaco Editor` : undefined,
-    icon: "🔍",
+    icon: "",
     status: "completed",
     durationMs: 80,
     details: codeLines > 0 ? `Captured ${codeLines} lines of code context from Monaco editor.` : "Extracted user intent and parameters.",
@@ -83,7 +83,7 @@ export function AgentProcessTimeline({
       id: "step-code-ctx",
       label: `Inspected code context`,
       sublabel: `${codeLines} lines · ready`,
-      icon: "💻",
+      icon: "",
       status: "completed",
       durationMs: 40,
       details: codeSnippet ? codeSnippet.slice(0, 300) + (codeSnippet.length > 300 ? "\n..." : "") : "",
@@ -96,7 +96,7 @@ export function AgentProcessTimeline({
       id: "step-rag",
       label: `Retrieved ${sourcesCount} grounded note excerpt${sourcesCount > 1 ? "s" : ""}`,
       sublabel: "Vector store cosine search",
-      icon: "📚",
+      icon: "",
       status: "completed",
       durationMs: 120,
       details: `Matched top ${sourcesCount} semantic chunks from local knowledge base.`,
@@ -108,7 +108,7 @@ export function AgentProcessTimeline({
     id: "step-model",
     label: `Evaluated prompt on local inference engine`,
     sublabel: `${modelName} · Warm RAM Cache`,
-    icon: "⚡",
+    icon: "",
     status: isLive && elapsedSec < 0.6 ? "running" : "completed",
     durationMs: 220,
     details: `Allocated multi-core threads. Evaluated context without cloud roundtrips.`,
@@ -120,7 +120,7 @@ export function AgentProcessTimeline({
       id: "step-streaming",
       label: `Streaming response tokens`,
       sublabel: `${elapsedSec}s elapsed`,
-      icon: "⏳",
+      icon: "",
       status: "running",
       details: "Generating clean verified code and explanation in real time.",
     });
@@ -130,7 +130,7 @@ export function AgentProcessTimeline({
       id: "step-completed",
       label: `Completed generation`,
       sublabel: `${elapsedSec}s · ${tokenCount > 0 ? `~${tokenCount} tokens` : "OK"} (${tps} tok/s)`,
-      icon: "✓",
+      icon: "",
       status: "completed",
       details: `Inference completed cleanly on local hardware with zero cloud latency.`,
     });
@@ -149,7 +149,7 @@ export function AgentProcessTimeline({
       >
         <div className="thought-bar-left">
           <span className={`thought-icon ${isLive ? "spinning" : ""}`}>
-            {isLive ? "⏳" : "🧠"}
+            {isLive ? "" : ""}
           </span>
           <span className="thought-label">
             {isLive ? `Thinking for ${elapsedSec}s...` : `Thought for ${elapsedSec}s`}

@@ -7,7 +7,7 @@ import {
   type ExamGenerateRequest,
   type ExamPaperRecord,
 } from "../api/client";
-import { AgentProcessTimeline } from "./AgentProcessTimeline";
+import { Markdown } from "../lib/markdown";
 
 interface ExamGeneratorPanelProps {
   initialExam?: ExamPaperRecord | null;
@@ -27,8 +27,6 @@ export function ExamGeneratorPanel({ initialExam }: ExamGeneratorPanelProps = {}
   const [examContent, setExamContent] = useState<string>("");
   const [showSolutions, setShowSolutions] = useState(true);
   const [copied, setCopied] = useState(false);
-  const [genStartTime, setGenStartTime] = useState<number>(0);
-  const [genEndTime, setGenEndTime] = useState<number | undefined>(undefined);
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -64,8 +62,6 @@ export function ExamGeneratorPanel({ initialExam }: ExamGeneratorPanelProps = {}
 
     setGenerating(true);
     setExamContent("");
-    setGenStartTime(Date.now());
-    setGenEndTime(undefined);
     abortRef.current = new AbortController();
 
     const req: ExamGenerateRequest = {
@@ -105,7 +101,6 @@ export function ExamGeneratorPanel({ initialExam }: ExamGeneratorPanelProps = {}
       const msg = err instanceof Error ? err.message : "Failed to generate exam paper";
       setExamContent((prev) => prev + `\n\n[Error: ${msg}]`);
     } finally {
-      setGenEndTime(Date.now());
       setGenerating(false);
       abortRef.current = null;
     }
@@ -199,7 +194,7 @@ export function ExamGeneratorPanel({ initialExam }: ExamGeneratorPanelProps = {}
                   onClick={() => setDifficulty(lvl)}
                   disabled={generating}
                 >
-                  {lvl === "easy" ? "🌱 Easy" : lvl === "medium" ? "⚖️ University" : "🔥 Hard"}
+                  {lvl === "easy" ? "Easy" : lvl === "medium" ? "University" : "Hard"}
                 </button>
               ))}
             </div>
@@ -248,7 +243,7 @@ export function ExamGeneratorPanel({ initialExam }: ExamGeneratorPanelProps = {}
           <div className="generate-actions">
             {generating ? (
               <button type="button" className="secondary" onClick={handleStop}>
-                ⏹ Stop Generation
+                Stop Generation
               </button>
             ) : (
               <button
@@ -257,14 +252,14 @@ export function ExamGeneratorPanel({ initialExam }: ExamGeneratorPanelProps = {}
                 onClick={handleGenerate}
                 disabled={documents.length === 0}
               >
-                ⚡ Set Reference Exam Paper
+                Set Reference Exam Paper
               </button>
             )}
           </div>
 
           {documents.length === 0 && (
             <div className="warning-box">
-              ⚠️ No notes uploaded yet. Switch to the <strong>Notes & Q&A</strong> tab to upload lecture notes or syllabus first.
+              No notes uploaded yet. Switch to the <strong>Notes & Q&A</strong> tab to upload lecture notes or syllabus first.
             </div>
           )}
         </div>
@@ -298,7 +293,7 @@ export function ExamGeneratorPanel({ initialExam }: ExamGeneratorPanelProps = {}
                 Download .md
               </button>
               <button type="button" className="print-btn" onClick={handlePrint}>
-                🖨️ Print / Save PDF
+                Print / Save PDF
               </button>
             </div>
           )}
@@ -307,38 +302,34 @@ export function ExamGeneratorPanel({ initialExam }: ExamGeneratorPanelProps = {}
         <div className="exam-sheet-container">
           {!examContent && !generating ? (
             <div className="empty-exam-state">
-              <div className="empty-icon">📝</div>
+              <div className="empty-icon"></div>
               <h3>Automated Reference Exam Paper Setter</h3>
               <p>
                 Configure the exam parameters on the left and click <strong>Set Reference Exam Paper</strong>.
               </p>
               <ul className="exam-features-list">
-                <li>✅ <strong>Section A (MCQs)</strong> with 4 choices & answer keys</li>
-                <li>✅ <strong>Section B (Short Answer)</strong> for core definitions & conceptual checks</li>
-                <li>✅ <strong>Section C (Long Questions)</strong> with comprehensive coding problems</li>
-                <li>✅ <strong>Complete Marking Scheme</strong> with point-by-point rubrics</li>
-                <li>✅ <strong>Print-Ready Format</strong> to export directly as college question paper</li>
+                <li><strong>Section A (MCQs)</strong> with 4 choices & answer keys</li>
+                <li><strong>Section B (Short Answer)</strong> for core definitions & conceptual checks</li>
+                <li><strong>Section C (Long Questions)</strong> with comprehensive coding problems</li>
+                <li><strong>Complete Marking Scheme</strong> with point-by-point rubrics</li>
+                <li><strong>Print-Ready Format</strong> to export directly as college question paper</li>
               </ul>
             </div>
           ) : (
             <div className="exam-sheet">
-              {genStartTime > 0 && (
-                <AgentProcessTimeline
-                  isLive={generating}
-                  startTime={genStartTime}
-                  endTime={genEndTime}
-                  mode="exam"
-                  sourcesCount={selectedDocIds.length > 0 ? selectedDocIds.length : documents.length}
-                  tokenCount={displayContent ? displayContent.split(/\s+/).filter(Boolean).length : 0}
-                />
-              )}
-              {generating && !examContent && (
+              {generating && (
                 <div className="generating-indicator">
                   <div className="spinner"></div>
-                  <p>Synthesizing reference exam paper from your uploaded notes...</p>
+                  <p>
+                    {examContent
+                      ? `Writing the paper… ${examContent.split(/\s+/).filter(Boolean).length} words so far`
+                      : "Reading your notes and drafting the paper…"}
+                  </p>
                 </div>
               )}
-              <pre className="markdown-body exam-rendered-text">{displayContent}</pre>
+              <div className="exam-rendered-text">
+                <Markdown text={displayContent} />
+              </div>
             </div>
           )}
         </div>

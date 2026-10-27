@@ -80,12 +80,10 @@ export function HistoryDrawer({
       <aside className="history-drawer" onClick={(e) => e.stopPropagation()}>
         <div className="history-header">
           <div className="history-header-title">
-            <span>💾</span>
+            <span></span>
             <strong>Local Storage & History</strong>
           </div>
-          <button type="button" className="close-btn" onClick={onClose} title="Close drawer">
-            ✕
-          </button>
+          <button type="button" className="close-btn" onClick={onClose} title="Close drawer">Close</button>
         </div>
 
         <button type="button" className="new-session-btn" onClick={onNewSession}>
@@ -144,9 +142,7 @@ export function HistoryDrawer({
                     className="delete-icon-btn"
                     title="Delete exam"
                     onClick={(e) => handleDeleteExam(exam.id, e)}
-                  >
-                    🗑️
-                  </button>
+                  >×</button>
                 </div>
               ))
             )
@@ -171,9 +167,7 @@ export function HistoryDrawer({
                   className="delete-icon-btn"
                   title="Delete conversation"
                   onClick={(e) => handleDeleteConv(conv.id, e)}
-                >
-                  🗑️
-                </button>
+                >×</button>
               </div>
             ))
           )}
