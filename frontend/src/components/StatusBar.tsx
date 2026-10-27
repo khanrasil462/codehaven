@@ -1,124 +1,67 @@
 import { useEffect, useState } from "react";
-import {
-  fetchHealth,
-  fetchSpeedStatus,
-  setSpeedMode,
-  type HealthResponse,
-  type SpeedStatusResponse,
-} from "../api/client";
+import { fetchModels, type ModelsStatus } from "../api/client";
 
+function gb(bytes: number) {
+  return (bytes / 1e9).toFixed(1);
+}
+
+/** Sidebar footer: model download progress and the Fast/Deep switch. */
 export function StatusBar() {
-  const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [speedStatus, setSpeedStatus] = useState<SpeedStatusResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [switchingSpeed, setSwitchingSpeed] = useState(false);
+  const [models, setModels] = useState<ModelsStatus | null>(null);
+
+  const downloading = models?.models.some((m) => m.state === "pulling" || m.state === "queued") ?? false;
+  const needsSetup = !!models && (!models.ready || downloading);
 
   useEffect(() => {
     let active = true;
-
     async function check() {
-      try {
-        const [healthData, speedData] = await Promise.all([
-          fetchHealth().catch(() => null),
-          fetchSpeedStatus().catch(() => null),
-        ]);
-        if (active) {
-          if (healthData) {
-            setHealth(healthData);
-            setError(null);
-          } else {
-            setHealth(null);
-            setError("Backend offline");
-          }
-          if (speedData) {
-            setSpeedStatus(speedData);
-          }
-        }
-      } catch {
-        if (active) {
-          setHealth(null);
-          setError("Backend offline");
-        }
-      }
+      const m = await fetchModels().catch(() => null);
+      if (!active) return;
+      if (m) setModels(m);
     }
-
-    check();
-    const id = setInterval(check, 8000);
+    void check();
+    const id = setInterval(check, needsSetup ? 1500 : 8000);
     return () => {
       active = false;
       clearInterval(id);
     };
-  }, []);
+  }, [needsSetup]);
 
-  async function handleToggleSpeed() {
-    if (switchingSpeed) return;
-    const nextMode = speedStatus?.active_mode === "turbo" ? "balanced" : "turbo";
-    setSwitchingSpeed(true);
-    try {
-      await setSpeedMode(nextMode);
-      const updated = await fetchSpeedStatus();
-      setSpeedStatus(updated);
-    } catch {
-      // ignore
-    } finally {
-      setSwitchingSpeed(false);
-    }
-  }
-
-  const ollamaOk = health?.ollama?.reachable;
-  const isTurbo = speedStatus?.active_mode === "turbo";
-  const activeModelDisplay = speedStatus?.effective_model || health?.chat_model || "qwen2.5-coder:7b";
+  const visible = models?.models.filter((m) => m.state !== "ready" && (!m.optional || m.state !== "missing")) ?? [];
 
   return (
-    <header className="status-bar terminal-status-bar">
-      <div className="brand">
-        <div className="terminal-window-dots">
-          <span className="dot dot-red" />
-          <span className="dot dot-yellow" />
-          <span className="dot dot-green" />
+    <div className="sidebar-status">
+      {models && !models.ollama_installed && !models.ollama_running && (
+        <p className="muted">Ollama isn't installed. Get it from ollama.com.</p>
+      )}
+
+      {visible.length > 0 && (
+        <div className="setup">
+          <span className="nav-label">Downloading models</span>
+          {visible.map((m) => {
+            const pct = m.total ? Math.round((m.completed / m.total) * 100) : 0;
+            return (
+              <div key={m.name} className="setup-row">
+                <div className="setup-head">
+                  <span>{m.name}</span>
+                  <span className="muted">
+                    {m.state === "pulling" ? `${pct}%` : m.state === "error" ? "retrying" : "queued"}
+                  </span>
+                </div>
+                <div className="bar">
+                  <div className="bar-fill" style={{ width: `${pct}%` }} />
+                </div>
+                {m.state === "pulling" && (
+                  <span className="muted setup-sub">
+                    {gb(m.completed)} / {gb(m.total)} GB
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
-        <div className="brand-title-wrap">
-          <div className="brand-logo-line">
-            <span className="terminal-glyph">λ_</span>
-            <strong className="brand-name">CodeHaven</strong>
-            <span className="terminal-ver">v0.2.0</span>
-          </div>
-          <span className="tagline">root@offline-station:~$ zero-cloud local coding studio</span>
-        </div>
-      </div>
+      )}
 
-      <div className="status-pills">
-        {/* Speed Optimization Toggle Pill */}
-        <button
-          type="button"
-          className={`pill pill-speed ${isTurbo ? "turbo" : "balanced"}`}
-          onClick={handleToggleSpeed}
-          disabled={switchingSpeed}
-          title="Click to toggle between Turbo Mode (blazing fast) and Balanced Mode (deep reasoning)"
-        >
-          <span className="speed-icon">{isTurbo ? "⚡" : "🧠"}</span>
-          <span className="speed-mode-name">{isTurbo ? "TURBO (FAST)" : "BALANCED (DEEP)"}</span>
-          <span className="speed-badge">{speedStatus?.speed_estimate || (isTurbo ? "50-80 t/s" : "15 t/s")}</span>
-        </button>
-
-        <span className={`pill ${health ? "ok" : "bad"}`}>
-          <span className="pulsing-dot" />
-          FASTAPI {health ? "ONLINE" : error ?? "OFFLINE"}
-        </span>
-
-        <span className={`pill ${ollamaOk ? "ok" : "bad"}`}>
-          <span className="pulsing-dot" />
-          OLLAMA {ollamaOk ? "READY" : "UNAVAILABLE"}
-        </span>
-
-        <span className="pill pill-model" title={`Active model: ${activeModelDisplay}`}>
-          🤖 {activeModelDisplay}
-        </span>
-
-        <span className="pill pill-offline">
-          🛡 100% AIR-GAPPED OFFLINE
-        </span>
-      </div>
-    </header>
+    </div>
   );
 }
