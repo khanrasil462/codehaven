@@ -16,6 +16,7 @@ class SpeedStatusResponse(BaseModel):
     keep_alive: str
     speed_estimate: str
     all_models: list[str]
+    selected_model: str | None = None
 
 
 @router.get("", response_model=SpeedStatusResponse)
@@ -31,6 +32,7 @@ async def get_speed_status() -> SpeedStatusResponse:
         keep_alive=KEEP_ALIVE,
         speed_estimate=estimate,
         all_models=all_models,
+        selected_model=ollama_client.selected_model,
     )
 
 
@@ -38,6 +40,7 @@ async def get_speed_status() -> SpeedStatusResponse:
 async def set_speed_mode(req: SpeedModeRequest) -> dict[str, str]:
     if req.mode in ("turbo", "balanced"):
         ollama_client.speed_mode = req.mode
+        ollama_client.selected_model = None
     effective = await ollama_client.get_effective_model()
     return {
         "status": "updated",
