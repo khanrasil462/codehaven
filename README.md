@@ -39,7 +39,15 @@ This will:
 2. Install frontend npm packages
 3. Pull Ollama models (`qwen2.5-coder:7b`, `nomic-embed-text`)
 
-## Run in development
+## Run on Linux / macOS
+
+```bash
+./scripts/dev.sh   # then open http://127.0.0.1:5173
+```
+
+The backend starts Ollama if needed and downloads any missing models automatically; progress shows in the sidebar. CodeHaven runs as a web app; Electron is optional (`npm run dev:electron`).
+
+## Run in development (Windows)
 
 ```powershell
 .\scripts\dev.ps1
